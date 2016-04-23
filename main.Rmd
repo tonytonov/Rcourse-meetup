@@ -1,0 +1,314 @@
+---
+title: "Разбор задач"
+author: "<i>Основы программирования на R</i><br><br>Антон Антонов"
+date: '<img src="../rprog-logo.png" alt="Logo here" width=256 height=256>'
+output: 
+  revealjs::revealjs_presentation:
+    theme: white
+    highlight: tango
+    center: false
+    transition: fade
+    pandoc_args: [ 
+      "--slide-level", "1", 
+      "--include-in-header", "custom.css"
+    ]
+---
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(microbenchmark)
+library(stringr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(knitr)
+opts_chunk$set(cache=TRUE)
+```
+
+# Curious stats  
+
+```{r}
+options(stringsAsFactors = FALSE)
+df <- read.csv("../course-497-submissions-full.csv")
+```
+
+. . .
+
+```{r}
+rbind(
+  total = summary(factor(df$status)),
+  count_elements = summary(factor(df$status[df$step_id == 86100])),
+  build_ziggurat = summary(factor(df$status[df$step_id == 86098])),
+  avian = summary(factor(df$status[df$step_id == 86882])),
+  binary_op = summary(factor(df$status[df$step_id == 93343]))
+)
+```
+
+# `count_elements`
+
+```{r}
+count_sol <- df[df$step_id == 86100 & df$status == "correct", "reply"]
+c(
+  length(count_sol[str_detect(count_sol, "for")]),
+  length(count_sol[str_detect(count_sol, "apply")]),
+  length(count_sol[str_detect(count_sol, "table")]),
+  length(count_sol)
+)
+```
+
+. . .
+
+```{r}
+count_elements_sapply <- function(x) {
+  y <- sort(unique(x)) # or unique(sort(x))?
+  rbind(y, sapply(y, function(a) sum(a == x)))
+}
+```
+
+# `count_elements`
+
+```{r}
+count_elements_table <- function(x) {
+  t <- table(x)
+  rbind(as.numeric(rownames(t)), t) # a bit clumsy but whatever
+}
+```
+
+. . .
+
+```{r}
+length(count_sol[!str_detect(count_sol, "table|apply|for")])
+```
+
+. . .
+```{r}
+count_elements_rle <- function(x) {
+  a <- rle(sort(x))
+  matrix(c(a$values, a$lengths), nrow = 2, byrow = T)
+}
+```
+
+# `count_elements`
+
+```{r}
+set.seed(1825); x <- sample(1:100, 1e5, replace = TRUE) # times = 200
+```
+
+```{r, fig.width=8, fig.height=6, fig.align='center', warning=FALSE, echo=FALSE}
+autoplot(microbenchmark(count_elements_sapply(x), count_elements_table(x), count_elements_rle(x), times = 200))
+```
+
+# `build_ziggurat`
+
+```{r}
+zig_sol <- df[df$step_id == 86098 & df$status == "correct", "reply"]
+c(
+  length(zig_sol), 
+  length(zig_sol[str_count(zig_sol, "for") > 1]), length(zig_sol[str_count(zig_sol, "for") == 1]),
+  length(zig_sol[!str_detect(zig_sol, "for|while|repeat")]), 
+  length(zig_sol[str_count(zig_sol, "function") > 1])
+)
+```
+
+. . .
+
+```{r}
+build_ziggurat_outer <- function(n) {
+  s <- 2 * n - 1
+  outer(1:s, 1:s, function(x, y) {
+  x <- n - abs(n - x)
+  y <- n - abs(n - y)
+  pmin(x, y)
+  })
+}
+```
+
+# `build_ziggurat`
+
+```{r}
+build_ziggurat_for <- function(n) {
+  w <- c(1:n, (n-1):1)
+  l <- length(w)
+  mat <- matrix(nrow=l, ncol=l)
+  for(p in 1:l) {
+    for (q in 1:l) {
+      mat[p, q] <- min(w[p], w[q])
+    }
+  }
+  if (n==1) mat <- matrix(1)
+  mat
+}
+```
+
+. . .
+
+```{r}
+build_ziggurat_apply <- function(n) {
+  tmp <- matrix(c(1:((n*2-1)^2)), nrow = n*2-1, ncol = n*2-1)
+  return(n - apply(tmp, 1:2, function(x) max(abs(c(n,n) - which(tmp == x, arr.ind = T)))))
+}
+```
+
+# `build_ziggurat`
+
+```{r}
+build_ziggurat_recursive1 <- function(n) {
+  ziggurat <- function (m, w1, w) {
+    a <- (w - w1)/2 + 1
+    b <- (w + w1)/2
+    m[a:b, a:b] <- m[a:b, a:b] + 1
+    if (w1 > 1) {
+      ziggurat(m, w1 - 2, w)
+    } else m
+  }
+  w <- 2*n - 1
+  ziggurat(matrix(0, ncol=w, nrow=w), w, w)
+}
+```
+
+. . .
+
+```{r}
+build_ziggurat_recursive2 <- function(n, level = 1) {
+  m <- matrix(level, nrow = n*2 - 1, ncol = n*2 - 1)
+  if (n > 1) {
+    m[2:(nrow(m) - 1), 2:(ncol(m) - 1)] <- build_ziggurat_recursive2(n - 1, level + 1) 
+  }
+  m
+}
+```
+
+# `Reduce` et al. : funprog is fun
+
+`Reduce(f, v)`: $l_1 = f(v_1, v_2), l_2 = f(l_1, v_3), ..., l_{n-1} = f(l_{n-2}, v_n)$
+
+```{r}
+set.seed(1961); sample_pool <- 1:100
+l <- replicate(20, sample(sample_pool, 10), simplify = FALSE)
+```
+
+. . .
+
+```{r}
+setdiff(sample_pool, Reduce(union, l))
+```
+
+. . .
+
+```{r}
+build_ziggurat_reduce <- function(n) {
+  stage <- function(k, n) {
+    m <- matrix(0, 2*n - 1, 2*n - 1)
+    ind <- k:(2*n - k)
+    m[ind, ind] <- 1
+    m
+  }
+  Reduce(`+`, lapply(1:n, function(i) stage(i, n)))
+}
+```
+
+# `build_ziggurat`
+
+```{r}
+n <- 50 # times = 40
+```
+
+```{r, fig.width=8, fig.height=6, fig.align='center', warning=FALSE, echo=FALSE}
+autoplot(microbenchmark(build_ziggurat_outer(n), build_ziggurat_apply(n), 
+                        build_ziggurat_recursive1(n), build_ziggurat_recursive2(n), 
+                        build_ziggurat_reduce(n), build_ziggurat_for(n)), times = 40)
+```
+
+# `avian`
+
+```{r}
+avian <- read.csv("avianHabitat.csv")
+avian %>% 
+  select(Site, Observer, contains("Ht")) %>% 
+  mutate(Site = factor(str_replace(Site, "[:digit:]+", ""))) %>% 
+  group_by(Site, Observer) %>% 
+  summarise_each(funs(sum(. > 0)))
+```
+
+# `avian`
+
+```{r}
+avian %>% 
+  select(Site, Observer, contains("Ht")) %>% 
+  mutate(Site = factor(str_replace(Site, "[:digit:]+", ""))) %>% 
+  gather(Species, Height, -Site, -Observer) %>% 
+  group_by(Site, Observer, Species) %>% 
+  summarise(Result = sum(Height > 0)) %>% 
+  filter(Result > 100)
+```
+
+# `avian`
+
+```{r}
+avian_base <- avian
+coverage_variables <- names(avian)[grepl("Ht", names(avian))]
+avian_base <- avian_base[, c("Site", "Observer", coverage_variables)]
+avian_base$Site <- factor(gsub("\\d", "", avian_base$Site))
+avian_base <- reshape(avian_base, direction = "long", varying = coverage_variables, 
+                      v.names = "Height", timevar = "Species", times = coverage_variables)
+avian_base <- avian_base[, c("Site", "Observer", "Species", "Height")]
+subset(
+  aggregate(avian_base[, "Height", drop = F], 
+          list(Site = avian_base$Site, Observer = avian_base$Observer, Species = avian_base$Species), 
+          function(x) sum(x > 0)), 
+  Height > 100
+)
+```
+
+# binary operator
+
+```{r}
+"%+for%" <- function(x, y) {
+  a <- max(length(x), length(y))
+  v <- rep(NA, a)
+  for (i in 1:a) { # a == 0 ??
+    a[i] <- x[i] + y[i]
+  }
+  #print(a) # ??
+  a
+}
+```
+
+. . .
+
+```{r}
+bin_sol <- df[df$step_id == 93343 & df$status == "correct", "reply"]
+length(bin_sol[!str_detect(bin_sol, "for|if|1:")])
+```
+
+# binary operator
+
+```{r}
+"%+len%" <- function(x, y) {
+  length(x) <- length(y) <- max(length(x), length(y))
+  x + y
+}
+```
+
+. . .
+
+```{r}
+"%+vap%" <- function(x, y) {
+  ind <- max(length(x), length(y))
+  vapply(seq_len(ind), function(i) x[i] + y[i], numeric(1)) # seq.int
+}
+```
+
+# binary operator
+
+```{r, fig.width=8, fig.height=6, fig.align='center', warning=FALSE}
+autoplot(microbenchmark(1e3 + 1e6, 1e3 %+for% 1e6, 1e3 %+len% 1e6, 1e3 %+vap% 1e6, times = 1000))
+```
+
+# SPb R User group 
+<br>
+<center>http://vk.com/spbrug</center>
+<br><br><br>
+
+. . .
+
+<center>Q&A</center>
