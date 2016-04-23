@@ -301,7 +301,7 @@ length(bin_sol[!str_detect(bin_sol, "for|if|1:")])
 # binary operator
 
 ```{r, fig.width=8, fig.height=6, fig.align='center', warning=FALSE}
-autoplot(microbenchmark(1e3 + 1e6, 1e3 %+for% 1e6, 1e3 %+len% 1e6, 1e3 %+vap% 1e6, times = 1000))
+autoplot(microbenchmark(1:1e2 + 1:1e4, 1:1e2 %+for% 1:1e4, 1:1e2 %+len% 1:1e4, 1:1e2 %+vap% 1:1e4, times = 1000))
 ```
 
 # SPb R User group 
